@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra-bda
+    restart: unless-stopped
+    ports:
+      - "9042:9042"
+    environment:
+      # Memory tuning for smooth execution on developer laptops
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=128M
+      - CASSANDRA_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_START_RPC=true
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: air-quality-dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - CASSANDRA_HOST=cassandra
+      - CASSANDRA_PORT=9042
+      - KEYSPACE=bda_air_quality
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
+volumes:
+  cassandra_data:
+    driver: local

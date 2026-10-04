@@ -1,0 +1,8 @@
+cassandra-driver>=3.28.0
+streamlit>=1.32.0
+pandas>=2.0.0
+plotly>=5.19.0
+numpy>=1.24.0
+python-dateutil>=2.8.2
+pyasyncore>=1.0.2; python_version >= "3.12"
+pyasynchat>=1.0.2; python_version >= "3.12"
