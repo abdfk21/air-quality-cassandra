@@ -328,26 +328,33 @@ with st.sidebar:
         secret_token = secret_token or os.getenv("ASTRA_TOKEN", "")
         secret_bundle = secret_bundle or os.getenv("ASTRA_BUNDLE", "")
 
-        astra_token_input = st.text_input("Astra DB Application Token", value=secret_token, type="password", placeholder="AstraCS:...")
+        # SECURITY: If token is configured via secrets, NEVER expose it in an input field!
+        if secret_token:
+            astra_token_input = secret_token
+            st.caption("🔒 **Cloud Token**: Configured securely via Secrets")
+        else:
+            astra_token_input = st.text_input("Astra DB Application Token", type="password", placeholder="AstraCS:...")
+
         astra_keyspace = st.text_input("Keyspace", value="bda_air_quality")
 
         # Bundle upload or path
-        uploaded_bundle = st.file_uploader("Upload Secure Connect Bundle (.zip)", type=["zip"])
         bundle_file_path = secret_bundle
-
-        if uploaded_bundle:
-            import tempfile
-            temp_path = os.path.join(tempfile.gettempdir(), uploaded_bundle.name)
-            with open(temp_path, "wb") as f:
-                f.write(uploaded_bundle.getbuffer())
-            bundle_file_path = temp_path
-        elif not bundle_file_path:
-            # Check local directory for any secure-connect*.zip file
-            import glob
-            local_zips = glob.glob("secure-connect*.zip")
-            if local_zips:
-                bundle_file_path = local_zips[0]
-                st.caption(f"Found local bundle: `{bundle_file_path}`")
+        if secret_bundle and os.path.exists(secret_bundle):
+            st.caption(f"🔒 **Connection Bundle**: `{os.path.basename(secret_bundle)}`")
+        else:
+            uploaded_bundle = st.file_uploader("Upload Secure Connect Bundle (.zip)", type=["zip"])
+            if uploaded_bundle:
+                import tempfile
+                temp_path = os.path.join(tempfile.gettempdir(), uploaded_bundle.name)
+                with open(temp_path, "wb") as f:
+                    f.write(uploaded_bundle.getbuffer())
+                bundle_file_path = temp_path
+            elif not bundle_file_path:
+                import glob
+                local_zips = glob.glob("secure-connect*.zip")
+                if local_zips:
+                    bundle_file_path = local_zips[0]
+                    st.caption(f"🔒 Local bundle detected: `{os.path.basename(bundle_file_path)}`")
 
         if astra_token_input and bundle_file_path:
             session, conn_error = get_cassandra_session(
@@ -360,11 +367,14 @@ with st.sidebar:
             else:
                 st.error("🔴 Astra DB Connection Failed")
                 with st.expander("Diagnostic"):
-                    st.code(conn_error or "Unknown error", language="text")
+                    import re
+                    clean_msg = re.sub(r'AstraCS:[a-zA-Z0-9_\-]+', 'AstraCS:[REDACTED]', str(conn_error or "Unknown error"))
+                    st.code(clean_msg, language="text")
         else:
             st.info("ℹ️ Provide your Astra DB Token and upload your `secure-connect-bundle.zip`.")
     else:
         st.info("📂 Running on Local CSV Telemetry (Offline Mode)")
+
 
 
     st.markdown("---")
