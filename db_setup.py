@@ -59,10 +59,12 @@ def get_cassandra_connection(
     if astra_bundle and astra_token:
         print(f"[*] Connecting to DataStax Astra DB using secure bundle: {astra_bundle}...")
         cloud_config = {'secure_connect_bundle': astra_bundle}
-        auth_provider = PlainTextAuthProvider('token', astra_token)
+        clean_token = astra_token.strip().strip('"').strip("'")
+        auth_provider = PlainTextAuthProvider('token', clean_token)
         cluster = Cluster(cloud=cloud_config, auth_provider=auth_provider)
         session = cluster.connect(keyspace)
         return cluster, session
+
 
     print(f"[*] Connecting to local Apache Cassandra at {host}:{port}...")
     for attempt in range(1, max_retries + 1):

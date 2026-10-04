@@ -234,13 +234,15 @@ def get_cassandra_session(
         return None, "cassandra-driver package is not installed."
     try:
         if astra_bundle and astra_token:
+            clean_token = astra_token.strip().strip('"').strip("'")
             if not os.path.exists(astra_bundle):
                 return None, f"Secure connect bundle not found at: {astra_bundle}"
             cloud_config = {'secure_connect_bundle': astra_bundle}
-            auth_provider = PlainTextAuthProvider('token', astra_token)
+            auth_provider = PlainTextAuthProvider('token', clean_token)
             cluster = Cluster(cloud=cloud_config, auth_provider=auth_provider)
             session = cluster.connect(keyspace)
             return session, None
+
 
         cluster = Cluster([host], port=port, connect_timeout=6)
         session = cluster.connect()
