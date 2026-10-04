@@ -83,22 +83,32 @@ def get_cassandra_connection(
                 raise e
 
 
-def create_schema(session: Session) -> None:
+def create_schema(session: Session, is_astra: bool = False) -> None:
     """Creates the keyspace and wide-column table optimized for time-series range queries."""
-    print(f"[*] Creating Keyspace '{KEYSPACE_NAME}' if not exists...")
-    keyspace_cql = f"""
-    CREATE KEYSPACE IF NOT EXISTS {KEYSPACE_NAME}
-    WITH replication = {{
-        'class': 'SimpleStrategy',
-        'replication_factor': 1
-    }};
-    """
-    session.execute(keyspace_cql)
-    session.set_keyspace(KEYSPACE_NAME)
+    if not is_astra:
+        print(f"[*] Creating Keyspace '{KEYSPACE_NAME}' if not exists...")
+        keyspace_cql = f"""
+        CREATE KEYSPACE IF NOT EXISTS {KEYSPACE_NAME}
+        WITH replication = {{
+            'class': 'SimpleStrategy',
+            'replication_factor': 1
+        }};
+        """
+        try:
+            session.execute(keyspace_cql)
+        except Exception as e:
+            print(f"[~] Note: Could not execute CREATE KEYSPACE ({e}). Proceeding...")
+    else:
+        print(f"[*] Using managed Astra DB Keyspace '{KEYSPACE_NAME}'...")
+
+    try:
+        session.set_keyspace(KEYSPACE_NAME)
+    except Exception as e:
+        print(f"[~] Keyspace notice: {e}")
 
     print(f"[*] Creating Table '{TABLE_NAME}' with Time-Series Clustering...")
     table_cql = f"""
-    CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+    CREATE TABLE IF NOT EXISTS {KEYSPACE_NAME}.{TABLE_NAME} (
         city text,
         recorded_at timestamp,
         station_id text,
@@ -110,11 +120,11 @@ def create_schema(session: Session) -> None:
         aqi int,
         spike_alert boolean,
         PRIMARY KEY (city, recorded_at, station_id)
-    ) WITH CLUSTERING ORDER BY (recorded_at DESC, station_id ASC)
-      AND comment = 'Time-series sensor telemetry for SDG 11 urban air quality monitoring';
+    ) WITH CLUSTERING ORDER BY (recorded_at DESC, station_id ASC);
     """
     session.execute(table_cql)
     print(f"[+] Schema initialized successfully: {KEYSPACE_NAME}.{TABLE_NAME}")
+
 
 
 def parse_timestamp(ts_str: str) -> datetime.datetime:
@@ -122,7 +132,7 @@ def parse_timestamp(ts_str: str) -> datetime.datetime:
     return datetime.datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
 
 
-def populate_data_from_csv(session: Session, csv_path: str = "air_quality_data.csv", batch_size: int = 500) -> None:
+def populate_data_from_csv(session: Session, csv_path: str = "air_quality_data.csv", batch_size: int = 400, concurrency: int = 25) -> None:
     """
     Reads records from CSV and inserts them concurrently into Cassandra using Prepared Statements.
     Utilizes cassandra.concurrent.execute_concurrent_with_args for optimal throughput without
@@ -161,15 +171,15 @@ def populate_data_from_csv(session: Session, csv_path: str = "air_quality_data.c
             ))
 
     total_records = len(all_parameters)
-    print(f"[*] Ingesting {total_records:,} records into Cassandra in chunks of {batch_size}...")
+    print(f"[*] Ingesting {total_records:,} records into Cassandra in chunks of {batch_size} (concurrency={concurrency})...")
 
     start_time = time.time()
     inserted_count = 0
 
     for i in range(0, total_records, batch_size):
         chunk = all_parameters[i:i + batch_size]
-        # Execute concurrently with up to 50 concurrent requests
-        results = execute_concurrent_with_args(session, prepared, chunk, concurrency=50)
+        results = execute_concurrent_with_args(session, prepared, chunk, concurrency=concurrency)
+
         
         # Verify success
         for success, result_or_exc in results:
@@ -195,16 +205,20 @@ def main():
     parser.add_argument("--astra-token", default=os.getenv("ASTRA_TOKEN"), help="Astra DB client application token")
     args = parser.parse_args()
 
+    is_astra = bool(args.astra_bundle and args.astra_token)
     cluster, session = get_cassandra_connection(
         host=args.host,
         port=args.port,
+        keyspace=KEYSPACE_NAME if is_astra else None,
         astra_bundle=args.astra_bundle,
         astra_token=args.astra_token,
     )
 
     try:
-        create_schema(session)
-        populate_data_from_csv(session, csv_path=args.csv)
+        create_schema(session, is_astra=is_astra)
+        populate_data_from_csv(session, csv_path=args.csv, concurrency=20 if is_astra else 50)
+
+
     finally:
         session.shutdown()
         cluster.shutdown()
