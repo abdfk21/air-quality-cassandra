@@ -219,14 +219,29 @@ st.markdown(
 
 
 # ==============================================================================
-# DATABASE CONNECTION & CACHING
+# DATABASE CONNECTION & CACHING (LOCAL CASSANDRA & DATASTAX ASTRA DB)
 # ==============================================================================
 @st.cache_resource(show_spinner=False)
-def get_cassandra_session(host: str, port: int, keyspace: str):
-    """Establishes a persistent, thread-safe connection to Apache Cassandra."""
+def get_cassandra_session(
+    host: str = "127.0.0.1",
+    port: int = 9042,
+    keyspace: str = "bda_air_quality",
+    astra_bundle: Optional[str] = None,
+    astra_token: Optional[str] = None,
+):
+    """Establishes a persistent connection to local Apache Cassandra or DataStax Astra DB."""
     if not CASSANDRA_DRIVER_AVAILABLE:
         return None, "cassandra-driver package is not installed."
     try:
+        if astra_bundle and astra_token:
+            if not os.path.exists(astra_bundle):
+                return None, f"Secure connect bundle not found at: {astra_bundle}"
+            cloud_config = {'secure_connect_bundle': astra_bundle}
+            auth_provider = PlainTextAuthProvider('token', astra_token)
+            cluster = Cluster(cloud=cloud_config, auth_provider=auth_provider)
+            session = cluster.connect(keyspace)
+            return session, None
+
         cluster = Cluster([host], port=port, connect_timeout=6)
         session = cluster.connect()
         try:
@@ -260,36 +275,95 @@ def get_aqi_details(aqi: int) -> Tuple[str, str, str, str]:
 with st.sidebar:
     st.markdown("## ⚡ Cluster Gateway")
     
+    # Check if Astra DB secrets are present
+    has_astra_secrets = False
+    try:
+        if "ASTRA_TOKEN" in st.secrets:
+            has_astra_secrets = True
+    except Exception:
+        pass
+
+    default_idx = 1 if has_astra_secrets else 0
+
     conn_mode = st.radio(
         "Connection Mode",
-        ["Live Cassandra Cluster", "Local CSV Cache (Offline)"],
-        index=0,
-        help="Switch to Local CSV if Cassandra is stopped or when presenting offline."
+        ["Live Cassandra Cluster (Local)", "DataStax Astra DB (Cloud)", "Local CSV Cache (Offline)"],
+        index=default_idx,
+        help="Connect to local Cassandra container, DataStax Astra cloud, or offline CSV."
     )
-
-    default_host = os.getenv("CASSANDRA_HOST", "127.0.0.1")
-    default_port = int(os.getenv("CASSANDRA_PORT", "9042"))
-    default_keyspace = os.getenv("KEYSPACE", "bda_air_quality")
-
-    cass_host = st.text_input("Cassandra Host", value=default_host)
-    cass_port = st.number_input("Port (CQL)", value=default_port, step=1)
-    cass_keyspace = st.text_input("Keyspace", value=default_keyspace)
-
 
     session = None
     conn_error = None
 
-    if conn_mode == "Live Cassandra Cluster":
-        session, conn_error = get_cassandra_session(cass_host, int(cass_port), cass_keyspace)
+    if conn_mode == "Live Cassandra Cluster (Local)":
+        default_host = os.getenv("CASSANDRA_HOST", "127.0.0.1")
+        default_port = int(os.getenv("CASSANDRA_PORT", "9042"))
+        default_keyspace = os.getenv("KEYSPACE", "bda_air_quality")
+
+        cass_host = st.text_input("Cassandra Host", value=default_host)
+        cass_port = st.number_input("Port (CQL)", value=default_port, step=1)
+        cass_keyspace = st.text_input("Keyspace", value=default_keyspace)
+
+        session, conn_error = get_cassandra_session(host=cass_host, port=int(cass_port), keyspace=cass_keyspace)
         if session:
             st.success(f"🟢 Connected: `{cass_host}:{cass_port}`")
         else:
-            st.error("🔴 Cluster Offline")
+            st.error("🔴 Local Cluster Offline")
             with st.expander("Connection Diagnostic"):
                 st.code(conn_error or "Unknown error", language="text")
             st.info("Tip: Start Cassandra via `docker compose up -d` & run `python db_setup.py`.")
+
+    elif conn_mode == "DataStax Astra DB (Cloud)":
+        # Check secrets or environment
+        secret_token = ""
+        secret_bundle = ""
+        try:
+            secret_token = st.secrets.get("ASTRA_TOKEN", "")
+            secret_bundle = st.secrets.get("ASTRA_BUNDLE_PATH", "")
+        except Exception:
+            pass
+
+        secret_token = secret_token or os.getenv("ASTRA_TOKEN", "")
+        secret_bundle = secret_bundle or os.getenv("ASTRA_BUNDLE", "")
+
+        astra_token_input = st.text_input("Astra DB Application Token", value=secret_token, type="password", placeholder="AstraCS:...")
+        astra_keyspace = st.text_input("Keyspace", value="bda_air_quality")
+
+        # Bundle upload or path
+        uploaded_bundle = st.file_uploader("Upload Secure Connect Bundle (.zip)", type=["zip"])
+        bundle_file_path = secret_bundle
+
+        if uploaded_bundle:
+            import tempfile
+            temp_path = os.path.join(tempfile.gettempdir(), uploaded_bundle.name)
+            with open(temp_path, "wb") as f:
+                f.write(uploaded_bundle.getbuffer())
+            bundle_file_path = temp_path
+        elif not bundle_file_path:
+            # Check local directory for any secure-connect*.zip file
+            import glob
+            local_zips = glob.glob("secure-connect*.zip")
+            if local_zips:
+                bundle_file_path = local_zips[0]
+                st.caption(f"Found local bundle: `{bundle_file_path}`")
+
+        if astra_token_input and bundle_file_path:
+            session, conn_error = get_cassandra_session(
+                keyspace=astra_keyspace,
+                astra_bundle=bundle_file_path,
+                astra_token=astra_token_input
+            )
+            if session:
+                st.success("🟢 Connected to DataStax Astra DB Cloud!")
+            else:
+                st.error("🔴 Astra DB Connection Failed")
+                with st.expander("Diagnostic"):
+                    st.code(conn_error or "Unknown error", language="text")
+        else:
+            st.info("ℹ️ Provide your Astra DB Token and upload your `secure-connect-bundle.zip`.")
     else:
-        st.info("📂 Running on Local CSV Telemetry")
+        st.info("📂 Running on Local CSV Telemetry (Offline Mode)")
+
 
     st.markdown("---")
     st.markdown("## 🔍 Query Parameters")
