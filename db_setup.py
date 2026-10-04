@@ -150,7 +150,8 @@ def populate_data_from_csv(session: Session, csv_path: str = "air_quality_data.c
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """
     prepared = session.prepare(insert_cql)
-    prepared.consistency_level = ConsistencyLevel.ONE
+    prepared.consistency_level = ConsistencyLevel.LOCAL_QUORUM
+
 
     print(f"[*] Reading telemetry records from '{csv_path}'...")
     all_parameters = []
