@@ -418,7 +418,7 @@ with st.sidebar:
     spike_pm25_val = st.slider("PM2.5 Hazard Level (µg/m³)", 150, 400, 250, 10)
 
     st.markdown("---")
-    st.caption("BDA Mini-Project | Apache Cassandra 4.x | UN SDG 11")
+    st.caption("Apache Cassandra 4.x | UN SDG 11")
 
 
 # ==============================================================================
@@ -615,7 +615,7 @@ tab_telemetry, tab_spikes, tab_diurnal, tab_profiler, tab_simulator, tab_viva = 
     "🕒 Diurnal & Heatmap Patterns",
     "⚡ CQL Query & Storage Profiler",
     "🌿 SDG 11 Policy Simulator",
-    "🎓 Viva Voce & Architecture Hub",
+    "",
 ])
 
 
@@ -1018,50 +1018,12 @@ with tab_simulator:
 # ------------------------------------------------------------------------------
 # TAB 6: VIVA VOCE & ARCHITECTURE HUB
 # ------------------------------------------------------------------------------
-with tab_viva:
-    st.markdown("### 🎓 Big Data Analytics & Apache Cassandra Knowledge Base")
-    st.caption("Comprehensive academic and viva voce study guide for project evaluation.")
-
-    q_a_items = [
-        (
-            "1. Why is Apache Cassandra chosen over Relational Databases (MySQL/PostgreSQL) for IoT?",
-            "IoT sensor networks emit high-velocity, append-heavy data streams. Relational databases use B-Trees that modify leaf nodes in place, requiring row and table locks that cause catastrophic disk thrashing under concurrent sensor writes. In contrast, Cassandra uses an **LSM-Tree (Log-Structured Merge-Tree)** architecture that converts random I/O into sequential disk appends (CommitLog + Memtable), easily scaling to 100,000+ writes/second per node."
-        ),
-        (
-            "2. What is the fundamental difference between a Partition Key and a Clustering Key?",
-            "• **Partition Key (`city`)**: Determines **which physical node** holds the data via the Murmur3Partitioner token hash. All records for the same city reside on the same cluster node.\n• **Clustering Key (`recorded_at DESC, station_id ASC`)**: Determines **how rows are physically sorted on disk** inside that partition's SSTable. `recorded_at DESC` ensures newest records are at the front of the partition, while `station_id` prevents sensor timestamp collisions."
-        ),
-        (
-            "3. Explain 'Query-First Data Modeling' in Apache Cassandra.",
-            "In RDBMS, data is normalized to 3NF and joined dynamically with SQL. In Cassandra, joins across distributed nodes do not exist. Therefore, data modeling is driven strictly by queries: you identify the exact queries your application needs, and construct dedicated tables whose primary keys satisfy those queries in a single partition seek."
-        ),
-        (
-            "4. Why is `CLUSTERING ORDER BY (recorded_at DESC)` optimal for sensor dashboards?",
-            "Dashboards primarily request the latest telemetry (e.g. `LIMIT 20`). By ordering `recorded_at DESC`, the most recent readings are positioned at the physical beginning of the SSTable file. Cassandra executes the query with an immediate O(1) sequential read without loading or sorting historical records into RAM."
-        ),
-        (
-            "5. What is `ALLOW FILTERING`, and why was it used in our spike query?",
-            "`ALLOW FILTERING` permits filtering on non-clustering columns. Across an entire cluster, it causes full table scans and is an anti-pattern. However, in our query: `WHERE city = 'Delhi' AND recorded_at >= ? AND spike_alert = true`, the partition key (`city`) and time bounds restrict execution to a single node's bounded memory slice, making it safe and performant."
-        ),
-        (
-            "6. Where does Cassandra stand in the CAP Theorem?",
-            "Cassandra is fundamentally an **AP (Available / Partition Tolerant)** masterless peer-to-peer system. Nodes continue accepting reads and writes even during network splits. It provides **Tunable Consistency** (ONE, QUORUM, ALL) so developers can balance consistency vs speed per query."
-        ),
-        (
-            "7. How does this project directly support UN SDG 11 (Sustainable Cities)?",
-            "Target 11.6 mandates reducing urban per-capita environmental impacts by monitoring fine particulate matter ($PM_{2.5}$ and $PM_{10}$). This system provides municipal decision-makers with real-time alerting for episodic pollution spikes, enabling rapid smog emergency protocols and public health advisories."
-        ),
-    ]
-
-    for question, answer in q_a_items:
-        with st.expander(f"📌 {question}"):
-            st.markdown(answer)
 
 st.markdown("---")
 st.markdown(
     """
     <div style="text-align: center; color: #64748B; font-size: 0.85rem; padding: 12px 0;">
-        Built with ❤️ for Big Data Analytics • Powered by Apache Cassandra 4.x & Streamlit • Aligned with UN SDG 11
+        • Powered by Apache Cassandra 4.x & Streamlit • Aligned with UN SDG 11
     </div>
     """,
     unsafe_allow_html=True,
